@@ -22,7 +22,7 @@ def setup_font():
     font_path = '/tmp/NanumGothic.ttf'
     if not os.path.exists(font_path):
         try:
-            url = 'https://github.com/naver/nanumfont/raw/master/fonts/NanumGothic.ttf'
+            url = 'https://cdn.jsdelivr.net/gh/fonts-archive/NanumGothic/NanumGothic.ttf'
             urllib.request.urlretrieve(url, font_path)
         except Exception:
             return 'DejaVu Sans'
