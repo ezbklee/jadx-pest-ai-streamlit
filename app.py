@@ -1,11 +1,15 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 import os
-import json
 from datetime import datetime
+
+from models import (
+    SPECIES_CONFIG, STATIONS, HISTORY_FILE, WEATHER_FILE, RM_MODEL_SPECIES,
+    run_model, get_risk_dates, save_history,
+    run_rm_model,
+)
 
 # ── 페이지 설정 ───────────────────────────────────────
 st.set_page_config(
@@ -18,7 +22,6 @@ st.set_page_config(
 @st.cache_resource
 def setup_font():
     import urllib.request
-    import os
     font_path = '/tmp/NanumGothic.ttf'
     if not os.path.exists(font_path):
         try:
@@ -27,7 +30,6 @@ def setup_font():
         except Exception:
             return 'DejaVu Sans'
     try:
-        import matplotlib.font_manager as fm
         fm.fontManager.addfont(font_path)
         return 'NanumGothic'
     except Exception:
@@ -36,110 +38,6 @@ def setup_font():
 FONT_NAME = setup_font()
 plt.rcParams['font.family'] = FONT_NAME
 plt.rcParams['axes.unicode_minus'] = False
-
-# ── 상수 설정 ─────────────────────────────────────────
-SPECIES_CONFIG = {
-    "네눈쑥가지나방": {
-        "name_en": "Ascotis selenaria",
-        "t_low": 9.8, "t_opt": 31.0, "t_upp": 37.8,
-        "gen1_x": 188.7, "gen2_x": 745.0, "b": 20,
-        "risk_1": {"주의": 188.7, "경보": 240.0, "심각": 289.4},
-        "risk_2": {"주의": 745.0, "경보": 883.7, "심각": 984.4},
-        "ref_julian": (120, 135),
-        "track": "A",
-        "source": "Choi & Kim 2014 (Crop Protection 66:72-79)"
-    },
-    "왕담배나방": {
-        "name_en": "Helicoverpa armigera",
-        "t_low": 10.7, "t_opt": 35.0, "t_upp": 40.0,
-        "gen1_x": 191.0, "gen2_x": 712.0, "b": 30,
-        "risk_1": {"주의": 191.0, "경보": 250.0, "심각": 310.0},
-        "risk_2": {"주의": 712.0, "경보": 850.0, "심각": 980.0},
-        "ref_julian": (130, 150),
-        "track": "A",
-        "source": "Choi et al. 2023 (JEE 116(5):1689) — T_low=10.7℃, 알43DD+유충287DD+번데기191DD / 제주대 공동연구 ⚠ b값·위험도 임계값은 자문 필요"
-    },
-    "파밤나방": {
-        "name_en": "Spodoptera exigua",
-        "t_low": 10.7, "t_opt": 33.0, "t_upp": 38.0,
-        "gen1_x": 376.5, "gen2_x": 753.0, "b": 30,
-        "risk_1": {"주의": 376.5, "경보": 500.0, "심각": 600.0},
-        "risk_2": {"주의": 753.0, "경보": 900.0, "심각": 1050.0},
-        "ref_julian": (150, 180),
-        "track": "B*",
-        "source": "파라미터 미확정 — 전문가 자문 필요 (임시값) / 기산점 설정 방식 자문 필요"
-    },
-    "조팝나무진딧물": {
-        "name_en": "Aphis spiraecola",
-        "t_low": 7.2, "t_opt": 25.0, "t_upp": 35.0,
-        "gen1_x": 100.0, "gen2_x": 200.0, "b": 15,
-        "risk_1": {"주의": 100.0, "경보": 150.0, "심각": 200.0},
-        "risk_2": {"주의": 200.0, "경보": 280.0, "심각": 360.0},
-        "ref_julian": (100, 130),
-        "track": "B",
-        "source": "파라미터 미확정 — 모델 구조 자문 필요 (임시값)"
-    }
-}
-
-STATIONS = {184: "제주", 189: "서귀포", 188: "성산", 185: "고산"}
-HISTORY_FILE = "simulation_history.csv"
-WEATHER_FILE = "tb_weather_pest.csv"
-
-# ── 핵심 함수 ──────────────────────────────────────────
-def sine_dd(tmax, tmin, t_low, t_opt, t_upp):
-    sub1 = (tmax - tmin) / 2
-    sub2 = (tmax + tmin) / 2
-    if abs(sub1) < 1e-9:
-        return 0
-    q_low  = np.arcsin(np.clip((t_low - sub2) / sub1, -1, 1))
-    q_high = np.arcsin(np.clip((t_opt - sub2) / sub1, -1, 1))
-    sub3 = sub2 - t_low if tmin > t_low else \
-           (1/np.pi)*((sub2-t_low)*(np.pi/2-q_low)+sub1*np.cos(q_low))
-    sub4 = (1/np.pi)*((sub2-t_low)*(q_high+np.pi/2)+(t_opt-t_low)*(np.pi/2-q_high)-sub1*np.cos(q_high))
-    sub5 = (1/np.pi)*((sub2-t_low)*(q_high-q_low)+sub1*(np.cos(q_high)-np.cos(q_low))+(t_opt-t_low)*(np.pi/2-q_high))
-    if tmax > t_upp or tmax < t_low: return 0
-    elif tmin > t_opt:               return t_opt - t_low
-    elif tmax < t_opt:               return sub3
-    else:                            return sub4 if tmin > t_low else sub5
-
-def sigmoid(dd, x_val, b):
-    return 1 / (1 + np.exp(-(dd - x_val) / b))
-
-def run_model(weather_df, stn_nm, year, cfg):
-    data = weather_df[
-        (weather_df['stn_nm'] == stn_nm) &
-        (weather_df['crtr_ymd'].astype(str).str[:4] == str(year))
-    ].copy().sort_values('crtr_ymd').reset_index(drop=True)
-
-    data['date'] = pd.to_datetime(data['crtr_ymd'], format='%Y%m%d')
-    data['jld']  = data['date'].dt.dayofyear
-
-    data['daily_dd'] = data.apply(
-        lambda r: sine_dd(r['day_hghst_tp'], r['day_lowst_tp'],
-                          cfg['t_low'], cfg['t_opt'], cfg['t_upp']), axis=1
-    )
-    data['cumdd']     = data['daily_dd'].cumsum()
-    data['sig_gen1']  = data['cumdd'].apply(lambda x: sigmoid(x, cfg['gen1_x'], cfg['b']))
-    data['sig_gen2']  = data['cumdd'].apply(lambda x: sigmoid(x, cfg['gen2_x'], cfg['b']))
-    return data
-
-def get_risk_dates(data, cfg):
-    result = {}
-    for grade, dd_val in cfg['risk_1'].items():
-        hit = data[data['cumdd'] >= dd_val]
-        result[f'1화기_{grade}'] = hit.iloc[0]['date'].strftime('%m/%d') + f" (J{int(hit.iloc[0]['jld'])})" if len(hit) > 0 else "미도달"
-    for grade, dd_val in cfg['risk_2'].items():
-        hit = data[data['cumdd'] >= dd_val]
-        result[f'2화기_{grade}'] = hit.iloc[0]['date'].strftime('%m/%d') + f" (J{int(hit.iloc[0]['jld'])})" if len(hit) > 0 else "미도달"
-    return result
-
-def save_history(record):
-    if os.path.exists(HISTORY_FILE):
-        hist = pd.read_csv(HISTORY_FILE)
-    else:
-        hist = pd.DataFrame()
-    hist = pd.concat([hist, pd.DataFrame([record])], ignore_index=True)
-    hist.to_csv(HISTORY_FILE, index=False, encoding='utf-8-sig')
 
 # ── 사이드바 ──────────────────────────────────────────
 with st.sidebar:
@@ -240,9 +138,17 @@ if menu == "시뮬레이션 실행":
             'risk_2': {'주의': r2_jui, '경보': r2_gyb, '심각': r2_sim},
         }
 
+        # ── 모델 분기 ──
         with st.spinner("모델 실행 중..."):
-            data = run_model(weather_df, station, year, run_cfg)
-            risk_dates = get_risk_dates(data, run_cfg)
+            if species == RM_MODEL_SPECIES:
+                data = run_rm_model(weather_df, station, year, run_cfg)
+            else:
+                data = run_model(weather_df, station, year, run_cfg)
+
+        if data is None:
+            st.stop()
+
+        risk_dates = get_risk_dates(data, run_cfg)
 
         # ── 결과 요약 ──
         st.markdown("---")
