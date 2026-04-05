@@ -102,7 +102,7 @@ def sigmoid(dd, x_val, b):
 def run_model(weather_df, stn_nm, year, cfg):
     data = weather_df[
         (weather_df['stn_nm'] == stn_nm) &
-        (weather_df['crtr_ymd'].str[:4] == str(year))
+        (weather_df['crtr_ymd'].astype(str).str[:4] == str(year))
     ].copy().sort_values('crtr_ymd').reset_index(drop=True)
 
     data['date'] = pd.to_datetime(data['crtr_ymd'], format='%Y%m%d')
