@@ -17,19 +17,19 @@ st.set_page_config(
 # ── 한글 폰트 설정 ─────────────────────────────────────
 @st.cache_resource
 def setup_font():
-    font_dirs = ['/usr/share/fonts', '/usr/local/share/fonts', os.path.expanduser('~/.fonts')]
-    for d in font_dirs:
-        if os.path.exists(d):
-            font_files = fm.findSystemFonts(fontpaths=[d])
-            for f in font_files:
-                if 'Nanum' in f or 'nanum' in f:
-                    fm.fontManager.addfont(f)
-                    return 'NanumGothic'
+    import subprocess
+    try:
+        subprocess.run(['apt-get', 'install', '-y', 'fonts-nanum'],
+                      capture_output=True, timeout=60)
+        import matplotlib.font_manager as fm
+        fm._load_fontmanager(try_read_cache=False)
+        font_list = [f.name for f in fm.fontManager.ttflist]
+        if 'NanumGothic' in font_list:
+            return 'NanumGothic'
+    except Exception:
+        pass
+    # 폰트 설치 실패 시 영문으로 fallback
     return 'DejaVu Sans'
-
-FONT_NAME = setup_font()
-plt.rcParams['font.family'] = FONT_NAME
-plt.rcParams['axes.unicode_minus'] = False
 
 # ── 상수 설정 ─────────────────────────────────────────
 SPECIES_CONFIG = {
