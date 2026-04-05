@@ -77,7 +77,6 @@ if menu == "시뮬레이션 실행":
     cfg = SPECIES_CONFIG[species].copy()
 
     # Track 경고
-    track_colors = {"A": "success", "B*": "warning", "B": "error"}
     track_msg = {
         "A":  "✅ Track A — 현행 구조 적용 가능",
         "B*": "⚠️ Track B* — 기산점 설정 방식 자문 필요",
@@ -157,14 +156,14 @@ if menu == "시뮬레이션 실행":
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("**1화기**")
-            for k, v in {k: v for k, v in risk_dates.items() if '1화기' in k}.items():
+            for k, v in ((k, v) for k, v in risk_dates.items() if '1화기' in k):
                 grade = k.split('_')[1]
                 color = "🟡" if grade == "주의" else "🟠" if grade == "경보" else "🔴"
                 st.metric(f"{color} {k}", v)
 
         with col2:
             st.markdown("**2화기**")
-            for k, v in {k: v for k, v in risk_dates.items() if '2화기' in k}.items():
+            for k, v in ((k, v) for k, v in risk_dates.items() if '2화기' in k):
                 grade = k.split('_')[1]
                 color = "🟡" if grade == "주의" else "🟠" if grade == "경보" else "🔴"
                 st.metric(f"{color} {k}", v)
@@ -304,7 +303,7 @@ elif menu == "파라미터 비교":
                     try:
                         jld = int(str(v).split('J')[1].replace(')',''))
                         vals_raw.append(jld)
-                    except:
+                    except Exception:
                         vals_raw.append(0)
                 else:
                     vals_raw.append(0)
@@ -312,7 +311,7 @@ elif menu == "파라미터 비교":
             bars = ax.bar(range(len(vals_raw)), vals_raw, color='#2E75B6', alpha=0.8)
             ref_low, ref_high = SPECIES_CONFIG[sel_species]['ref_julian']
             ax.axhspan(ref_low, ref_high, alpha=0.15, color='orange', label=f'논문 권장 범위 (J{ref_low}~{ref_high})')
-            for i, (bar, v) in enumerate(zip(bars, vals_raw)):
+            for _, (bar, v) in enumerate(zip(bars, vals_raw)):
                 ax.text(bar.get_x() + bar.get_width()/2, v + 1, f'J{v}', ha='center', fontsize=9)
             ax.set_xticks(range(len(labels)))
             ax.set_xticklabels(labels, fontsize=8)
