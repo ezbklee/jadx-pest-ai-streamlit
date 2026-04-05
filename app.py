@@ -17,19 +17,19 @@ st.set_page_config(
 # ── 한글 폰트 설정 ─────────────────────────────────────
 @st.cache_resource
 def setup_font():
-    import subprocess
-    try:
-        subprocess.run(['apt-get', 'install', '-y', 'fonts-nanum'],
-                      capture_output=True, timeout=60)
-        import matplotlib.font_manager as fm
-        fm._load_fontmanager(try_read_cache=False)
-        font_list = [f.name for f in fm.fontManager.ttflist]
-        if 'NanumGothic' in font_list:
-            return 'NanumGothic'
-    except Exception:
-        pass
-    # 폰트 설치 실패 시 영문으로 fallback
+    font_dirs = ['/usr/share/fonts', '/usr/local/share/fonts', os.path.expanduser('~/.fonts')]
+    for d in font_dirs:
+        if os.path.exists(d):
+            font_files = fm.findSystemFonts(fontpaths=[d])
+            for f in font_files:
+                if 'Nanum' in f or 'nanum' in f:
+                    fm.fontManager.addfont(f)
+                    return 'NanumGothic'
     return 'DejaVu Sans'
+
+FONT_NAME = setup_font()
+plt.rcParams['font.family'] = FONT_NAME
+plt.rcParams['axes.unicode_minus'] = False
 
 # ── 상수 설정 ─────────────────────────────────────────
 SPECIES_CONFIG = {
@@ -46,12 +46,12 @@ SPECIES_CONFIG = {
     "왕담배나방": {
         "name_en": "Helicoverpa armigera",
         "t_low": 10.7, "t_opt": 35.0, "t_upp": 40.0,
-        "gen1_x": 300.0, "gen2_x": 900.0, "b": 30,
-        "risk_1": {"주의": 300.0, "경보": 400.0, "심각": 500.0},
-        "risk_2": {"주의": 900.0, "경보": 1100.0, "심각": 1300.0},
+        "gen1_x": 191.0, "gen2_x": 712.0, "b": 30,
+        "risk_1": {"주의": 191.0, "경보": 250.0, "심각": 310.0},
+        "risk_2": {"주의": 712.0, "경보": 850.0, "심각": 980.0},
         "ref_julian": (130, 150),
         "track": "A",
-        "source": "파라미터 미확정 — 전문가 자문 필요 (임시값)"
+        "source": "Choi et al. 2023 (JEE 116(5):1689) — T_low=10.7℃, 알43DD+유충287DD+번데기191DD / 제주대 공동연구 ⚠ b값·위험도 임계값은 자문 필요"
     },
     "파밤나방": {
         "name_en": "Spodoptera exigua",
@@ -102,7 +102,7 @@ def sigmoid(dd, x_val, b):
 def run_model(weather_df, stn_nm, year, cfg):
     data = weather_df[
         (weather_df['stn_nm'] == stn_nm) &
-        (weather_df['crtr_ymd'].astype(str).str[:4] == str(year))
+        (weather_df['crtr_ymd'].str[:4] == str(year))
     ].copy().sort_values('crtr_ymd').reset_index(drop=True)
 
     data['date'] = pd.to_datetime(data['crtr_ymd'], format='%Y%m%d')
