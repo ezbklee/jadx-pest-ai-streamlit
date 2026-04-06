@@ -8,6 +8,7 @@ from datetime import datetime
 
 from models import (
     SPECIES_CONFIG, STATIONS, HISTORY_FILE, WEATHER_FILE, RM_MODEL_SPECIES,
+    CROP_PEST_MAP,
     run_model, get_risk_dates, save_history,
     run_rm_model,
 )
@@ -47,6 +48,37 @@ with st.sidebar:
 
     menu = st.radio("메뉴", ["시뮬레이션 실행", "이력 조회", "파라미터 비교"])
 
+# ── 작물 선택 헬퍼 (시뮬레이션 실행 메뉴 전용) ──────────────
+def _crop_pest_selector():
+    """사이드바 하단에 작물→병해충 선택 UI를 그리고 선택된 종명을 반환."""
+    with st.sidebar:
+        st.markdown("---")
+        st.markdown("**🌱 작물 선택**")
+
+        # 전체 보기 옵션 포함
+        crop_options = ["(전체)"] + list(CROP_PEST_MAP.keys())
+        selected_crop = st.selectbox("작물", crop_options, label_visibility="collapsed")
+
+        if selected_crop == "(전체)":
+            pest_list = list(SPECIES_CONFIG.keys())
+        else:
+            pest_list = CROP_PEST_MAP[selected_crop]
+
+        # 배지 표시용 라벨 생성
+        track_icon = {"운영": "✅", "A": "🟢", "B*": "🟡", "B": "🔴"}
+
+        def _label(p):
+            trk = SPECIES_CONFIG[p].get("track", "")
+            icon = track_icon.get(trk, "")
+            return f"{icon} {p}"
+
+        pest_labels = [_label(p) for p in pest_list]
+        label_to_name = dict(zip(pest_labels, pest_list))
+
+        st.markdown("**🐛 병해충 선택**")
+        selected_label = st.selectbox("병해충", pest_labels, label_visibility="collapsed")
+        return label_to_name[selected_label]
+
 # ══ 메뉴 1: 시뮬레이션 실행 ════════════════════════════
 if menu == "시뮬레이션 실행":
     st.title("🔬 병해충 예보 모형 시뮬레이션")
@@ -68,8 +100,11 @@ if menu == "시뮬레이션 실행":
     st.subheader("① 기본 설정")
     col1, col2, col3 = st.columns(3)
 
+    # 작물→병해충 선택 (사이드바)
+    species = _crop_pest_selector()
+
     with col1:
-        species = st.selectbox("해충 종 선택", list(SPECIES_CONFIG.keys()))
+        st.markdown(f"**선택 종:** `{species}`")
     with col2:
         year = st.selectbox("연도", years)
     with col3:
@@ -79,16 +114,18 @@ if menu == "시뮬레이션 실행":
 
     # Track 경고
     track_msg = {
-        "A":  "✅ Track A — 현행 구조 적용 가능",
+        "운영": "✅ 운영 중 — 소스코드 확인 파라미터 적용",
+        "A":  "🟢 Track A — 현행 구조 적용 가능",
         "B*": "⚠️ Track B* — 기산점 설정 방식 자문 필요",
         "B":  "❌ Track B — 모델 구조 신규 설계 필요"
     }
-    if cfg['track'] == "A":
-        st.success(track_msg[cfg['track']])
-    elif cfg['track'] == "B*":
-        st.warning(track_msg[cfg['track']])
+    track = cfg.get('track', '')
+    if track in ("운영", "A"):
+        st.success(track_msg.get(track, track))
+    elif track == "B*":
+        st.warning(track_msg.get(track, track))
     else:
-        st.error(track_msg[cfg['track']])
+        st.error(track_msg.get(track, track))
 
     st.caption(f"📚 파라미터 출처: {cfg['source']}")
 
