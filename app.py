@@ -114,17 +114,17 @@ if menu == "시뮬레이션 실행":
 
     # ── 위험도 임계값 자동 계산 (Sigmoid 역산)
     # 주의 = 10% 도달 DD = X - b * ln(9)
-    # 경보 = 50% 도달 DD = X
+    # 경계 = 50% 도달 DD = X
     # 심각 = 90% 도달 DD = X + b * ln(9)
     _ln9 = math.log(9)
     risk_1 = {
         '주의': gen1_x - b_val * _ln9,
-        '경보': gen1_x,
+        '경계': gen1_x,
         '심각': gen1_x + b_val * _ln9,
     }
     risk_2 = {
         '주의': gen2_x - b_val * _ln9,
-        '경보': gen2_x,
+        '경계': gen2_x,
         '심각': gen2_x + b_val * _ln9,
     }
 
@@ -170,9 +170,9 @@ if menu == "시뮬레이션 실행":
             "T_low": t_low, "T_opt": t_opt, "T_upp": t_upp,
             "1화기_X": gen1_x, "2화기_X": gen2_x, "b값": b_val,
             "1화기_주의": risk_dates.get('1화기_주의', '미도달'),
-            "1화기_경보": risk_dates.get('1화기_경보', '미도달'),
+            "1화기_경계": risk_dates.get('1화기_경계', '미도달'),
             "2화기_주의": risk_dates.get('2화기_주의', '미도달'),
-            "2화기_경보": risk_dates.get('2화기_경보', '미도달'),
+            "2화기_경계": risk_dates.get('2화기_경계', '미도달'),
             "메모": memo
         }
         save_history(record)
@@ -213,14 +213,14 @@ if menu == "시뮬레이션 실행":
             st.markdown("**1화기**")
             for k, v in ((k, v) for k, v in risk_dates.items() if '1화기' in k):
                 grade = k.split('_')[1]
-                color = "🟡" if grade == "주의" else "🟠" if grade == "경보" else "🔴"
+                color = "🟡" if grade == "주의" else "🟠" if grade == "경계" else "🔴"
                 st.metric(f"{color} {k}", v)
 
         with col2:
             st.markdown("**2화기**")
             for k, v in ((k, v) for k, v in risk_dates.items() if '2화기' in k):
                 grade = k.split('_')[1]
-                color = "🟡" if grade == "주의" else "🟠" if grade == "경보" else "🔴"
+                color = "🟡" if grade == "주의" else "🟠" if grade == "경계" else "🔴"
                 st.metric(f"{color} {k}", v)
 
         # 논문 기준값 비교
@@ -246,8 +246,8 @@ if menu == "시뮬레이션 실행":
         with tab1:
             fig, ax = plt.subplots(figsize=(13, 5))
             ax.plot(data['jld'], data['cumdd'], color='#2E75B6', linewidth=2, label='누적 DD')
-            colors_risk = [('#FFC000','1화기 주의'), ('#FF8C00','1화기 경보'), ('#FF0000','1화기 심각'),
-                           ('#70AD47','2화기 주의'), ('#00B050','2화기 경보')]
+            colors_risk = [('#FFC000','1화기 주의'), ('#FF8C00','1화기 경계'), ('#FF0000','1화기 심각'),
+                           ('#70AD47','2화기 주의'), ('#00B050','2화기 경계')]
             vals = list(run_cfg['risk_1'].values()) + list(run_cfg['risk_2'].values())[:2]
             for (color, label), val in zip(colors_risk, vals):
                 ax.axhline(y=val, color=color, linestyle='--', alpha=0.7, linewidth=1.2, label=f'{label} ({val:.1f} DD)')
@@ -268,7 +268,7 @@ if menu == "시뮬레이션 실행":
             fig2, ax2 = plt.subplots(figsize=(13, 5))
             ax2.plot(data['jld'], data['sig_gen1'], color='#2E75B6', linewidth=2, label='1화기 개체군')
             ax2.plot(data['jld'], data['sig_gen2'], color='#70AD47', linewidth=2, label='2화기 개체군')
-            for val, label in [(0.1,'주의(10%)'),(0.5,'경보(50%)'),(0.9,'심각(90%)')]:
+            for val, label in [(0.1,'주의(10%)'),(0.5,'경계(50%)'),(0.9,'심각(90%)')]:
                 ax2.axhline(y=val, color='gray', linestyle=':', alpha=0.5, linewidth=1)
                 ax2.text(5, val+0.02, label, fontsize=8, color='gray')
             ax2.axvspan(ref_low, ref_high, alpha=0.08, color='orange', label='논문 권장 구간')
@@ -415,6 +415,6 @@ elif menu == "파라미터 비교":
             plt.close()
 
             st.dataframe(
-                filtered[['실행일시','T_low','T_opt','b값','1화기_X','2화기_X','1화기_주의','1화기_경보','2화기_주의','메모']],
+                filtered[['실행일시','T_low','T_opt','b값','1화기_X','2화기_X','1화기_주의','1화기_경계','2화기_주의','메모']],
                 use_container_width=True, hide_index=True
             )

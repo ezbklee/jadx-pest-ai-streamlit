@@ -46,7 +46,7 @@ streamlit run app.py
 
 - 일별 최고·최저 기온으로 Sine 적산온도(DD)를 계산합니다.
 - 누적 DD에 Sigmoid 함수를 적용해 세대별 개체군 출현 비율을 추정합니다.
-- 위험도 임계값(주의·경보·심각) 도달일을 Julian Date로 출력합니다.
+- 위험도 임계값(주의·경계·심각) 도달일을 Julian Date로 출력합니다.
 
 ### rm 모델 (rm_model.py) — 개발 예정
 
