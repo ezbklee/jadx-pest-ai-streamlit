@@ -43,6 +43,16 @@ def run_model(weather_df, stn_nm, year, cfg):
         lambda r: sine_dd(r['day_hghst_tp'], r['day_lowst_tp'],
                           cfg['t_low'], cfg['t_opt'], cfg['t_upp']), axis=1
     )
+
+    # 귤굴나방 특이 처리: 5일 이동평균 ≥ bug_active 온도 이전은 DD=0
+    if cfg.get('bug_active') is not None:
+        avg_tp = (data['day_hghst_tp'] + data['day_lowst_tp']) / 2
+        ma5 = avg_tp.rolling(5, min_periods=1).mean()
+        first_active = ma5[ma5 >= cfg['bug_active']].index.min()
+        if pd.notna(first_active):
+            data.loc[data.index < first_active, 'daily_dd'] = 0.0
+            data.loc[first_active, 'daily_dd'] = 0.0   # reset 지점 포함
+
     data['cumdd']    = data['daily_dd'].cumsum()
     data['sig_gen1'] = data['cumdd'].apply(lambda x: sigmoid(x, cfg['gen1_x'], cfg['b']))
     data['sig_gen2'] = data['cumdd'].apply(lambda x: sigmoid(x, cfg['gen2_x'], cfg['b']))
