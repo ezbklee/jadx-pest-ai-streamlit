@@ -303,27 +303,33 @@ if menu == "시뮬레이션 실행":
                 use_container_width=True,
             )
 
-        # ② 전체 연도 일괄 실행
+        # ② 전체 연도 × 전체 관측소 일괄 실행
         with col_dl2:
-            if st.button("🔄 전체 연도 일괄 계산 (2020~2025)", use_container_width=True):
+            if st.button("🔄 전체 연도 × 관측소 일괄 계산 (2020~2025)", use_container_width=True):
                 all_years = sorted([
                     int(yr) for yr in weather_df['crtr_ymd'].astype(str).str[:4].unique()
                     if 2020 <= int(yr) <= 2025
                 ])
+                all_stations = list(STATIONS.values())
+                total = len(all_years) * len(all_stations)
                 rows = []
-                prog = st.progress(0, text="전체 연도 계산 중...")
-                for i, yr in enumerate(all_years):
-                    yr_data = run_model(weather_df, _station, yr, run_cfg)
-                    yr_risk = get_risk_dates(yr_data, run_cfg)
-                    rows.append({'연도': yr, **yr_risk})
-                    prog.progress((i + 1) / len(all_years), text=f"{yr}년 완료...")
+                prog = st.progress(0, text="계산 중...")
+                step = 0
+                for stn in all_stations:
+                    for yr in all_years:
+                        yr_data = run_model(weather_df, stn, yr, run_cfg)
+                        yr_risk = get_risk_dates(yr_data, run_cfg)
+                        rows.append({'관측소': stn, '연도': yr, **yr_risk})
+                        step += 1
+                        prog.progress(step / total, text=f"{stn} {yr}년 완료...")
                 prog.empty()
-                st.session_state['all_years_csv'] = pd.DataFrame(rows).to_csv(index=False, encoding='utf-8-sig')
-                st.session_state['all_years_fn']  = f"result_{_species}_{_station}_전체.csv"
+                all_df = pd.DataFrame(rows)
+                st.session_state['all_years_csv'] = all_df.to_csv(index=False).encode('utf-8-sig')
+                st.session_state['all_years_fn']  = f"result_{_species}_전체.csv"
 
             if 'all_years_csv' in st.session_state:
                 st.download_button(
-                    "📥 전체 연도 CSV 다운로드",
+                    "📥 전체 연도 × 관측소 CSV 다운로드",
                     st.session_state['all_years_csv'],
                     st.session_state['all_years_fn'],
                     "text/csv",
