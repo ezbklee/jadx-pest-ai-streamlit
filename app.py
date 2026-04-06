@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 import os
+import math
 from datetime import datetime
 
 from models import (
@@ -111,19 +112,32 @@ if menu == "시뮬레이션 실행":
         b_val = st.number_input("b값 (분포 폭)", value=float(cfg['b']), step=1.0, format="%.1f")
         st.caption("⚠ b값은 현재 임의값\n전문가 자문 필요")
 
-    # ── 위험도 임계값 입력 (X_Value와 독립적으로 관리)
-    with st.expander("⚙ 위험도 임계값 설정 (기본값: 엑셀 모델 기준)"):
+    # ── 위험도 임계값 자동 계산 (Sigmoid 역산)
+    # 주의 = 10% 도달 DD = X - b * ln(9)
+    # 경보 = 50% 도달 DD = X
+    # 심각 = 90% 도달 DD = X + b * ln(9)
+    _ln9 = math.log(9)
+    risk_1 = {
+        '주의': gen1_x - b_val * _ln9,
+        '경보': gen1_x,
+        '심각': gen1_x + b_val * _ln9,
+    }
+    risk_2 = {
+        '주의': gen2_x - b_val * _ln9,
+        '경보': gen2_x,
+        '심각': gen2_x + b_val * _ln9,
+    }
+
+    with st.expander("📐 위험도 임계값 (자동 계산)", expanded=False):
         col_r1, col_r2 = st.columns(2)
         with col_r1:
             st.markdown("**1화기 임계값 (DD)**")
-            r1_jui  = st.number_input("1화기 주의", value=float(cfg['risk_1']['주의']), step=1.0, format="%.1f")
-            r1_gyb  = st.number_input("1화기 경보", value=float(cfg['risk_1']['경보']), step=1.0, format="%.1f")
-            r1_sim  = st.number_input("1화기 심각", value=float(cfg['risk_1']['심각']), step=1.0, format="%.1f")
+            for grade, val in risk_1.items():
+                st.text(f"{grade}: {val:.1f} DD")
         with col_r2:
             st.markdown("**2화기 임계값 (DD)**")
-            r2_jui  = st.number_input("2화기 주의", value=float(cfg['risk_2']['주의']), step=1.0, format="%.1f")
-            r2_gyb  = st.number_input("2화기 경보", value=float(cfg['risk_2']['경보']), step=1.0, format="%.1f")
-            r2_sim  = st.number_input("2화기 심각", value=float(cfg['risk_2']['심각']), step=1.0, format="%.1f")
+            for grade, val in risk_2.items():
+                st.text(f"{grade}: {val:.1f} DD")
 
     memo = st.text_input("메모 (선택)", placeholder="예: 논문 역산값 적용 / 2화기 수정 테스트")
 
@@ -133,8 +147,8 @@ if menu == "시뮬레이션 실행":
         run_cfg = {
             't_low': t_low, 't_opt': t_opt, 't_upp': t_upp,
             'gen1_x': gen1_x, 'gen2_x': gen2_x, 'b': b_val,
-            'risk_1': {'주의': r1_jui, '경보': r1_gyb, '심각': r1_sim},
-            'risk_2': {'주의': r2_jui, '경보': r2_gyb, '심각': r2_sim},
+            'risk_1': risk_1,
+            'risk_2': risk_2,
         }
 
         # ── 모델 분기 ──
@@ -148,6 +162,47 @@ if menu == "시뮬레이션 실행":
             st.stop()
 
         risk_dates = get_risk_dates(data, run_cfg)
+
+        # ── 이력 저장 ──
+        record = {
+            "실행일시": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "종": species, "연도": year, "관측소": station,
+            "T_low": t_low, "T_opt": t_opt, "T_upp": t_upp,
+            "1화기_X": gen1_x, "2화기_X": gen2_x, "b값": b_val,
+            "1화기_주의": risk_dates.get('1화기_주의', '미도달'),
+            "1화기_경보": risk_dates.get('1화기_경보', '미도달'),
+            "2화기_주의": risk_dates.get('2화기_주의', '미도달'),
+            "2화기_경보": risk_dates.get('2화기_경보', '미도달'),
+            "메모": memo
+        }
+        save_history(record)
+
+        # ── session_state에 결과 보존 (다운로드 버튼이 rerun 후에도 유지되도록) ──
+        st.session_state['sim'] = {
+            'data': data,
+            'risk_dates': risk_dates,
+            'run_cfg': run_cfg,
+            'cfg': cfg,
+            'species': species,
+            'station': station,
+            'year': year,
+            't_low': t_low, 't_opt': t_opt, 't_upp': t_upp,
+            'gen1_x': gen1_x, 'gen2_x': gen2_x, 'b_val': b_val,
+        }
+        st.session_state.pop('all_years_csv', None)  # 이전 전체 연도 결과 초기화
+
+    # ── 결과 표시 (session_state 기반, rerun 후에도 유지) ──
+    if 'sim' in st.session_state:
+        s        = st.session_state['sim']
+        data     = s['data']
+        risk_dates = s['risk_dates']
+        run_cfg  = s['run_cfg']
+        cfg      = s['cfg']
+        _species = s['species']
+        _station = s['station']
+        _year    = s['year']
+
+        st.success("✅ 이력 저장 완료")
 
         # ── 결과 요약 ──
         st.markdown("---")
@@ -199,7 +254,7 @@ if menu == "시뮬레이션 실행":
             ax.axvspan(ref_low, ref_high, alpha=0.08, color='gray', label=f'논문 권장 구간 (J{ref_low}~{ref_high})')
             ax.set_xlabel('월')
             ax.set_ylabel('누적 DD')
-            ax.set_title(f'{species} 누적 DD 및 위험도 ({year}년 {station})')
+            ax.set_title(f'{_species} 누적 DD 및 위험도 ({_year}년 {_station})')
             ax.set_xlim(1, 365)
             ax.set_xticks(month_ticks)
             ax.set_xticklabels(month_labels)
@@ -216,10 +271,10 @@ if menu == "시뮬레이션 실행":
             for val, label in [(0.1,'주의(10%)'),(0.5,'경보(50%)'),(0.9,'심각(90%)')]:
                 ax2.axhline(y=val, color='gray', linestyle=':', alpha=0.5, linewidth=1)
                 ax2.text(5, val+0.02, label, fontsize=8, color='gray')
-            ax2.axvspan(ref_low, ref_high, alpha=0.08, color='orange', label=f'논문 권장 구간')
+            ax2.axvspan(ref_low, ref_high, alpha=0.08, color='orange', label='논문 권장 구간')
             ax2.set_xlabel('월')
             ax2.set_ylabel('개체군 출현 비율 (0~1)')
-            ax2.set_title(f'{species} 세대별 개체군 발생 곡선 ({year}년 {station})')
+            ax2.set_title(f'{_species} 세대별 개체군 발생 곡선 ({_year}년 {_station})')
             ax2.set_xlim(1, 365)
             ax2.set_ylim(-0.05, 1.05)
             ax2.set_xticks(month_ticks)
@@ -230,20 +285,50 @@ if menu == "시뮬레이션 실행":
             st.pyplot(fig2)
             plt.close()
 
-        # ── 이력 저장 ──
-        record = {
-            "실행일시": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "종": species, "연도": year, "관측소": station,
-            "T_low": t_low, "T_opt": t_opt, "T_upp": t_upp,
-            "1화기_X": gen1_x, "2화기_X": gen2_x, "b값": b_val,
-            "1화기_주의": risk_dates.get('1화기_주의','미도달'),
-            "1화기_경보": risk_dates.get('1화기_경보','미도달'),
-            "2화기_주의": risk_dates.get('2화기_주의','미도달'),
-            "2화기_경보": risk_dates.get('2화기_경보','미도달'),
-            "메모": memo
-        }
-        save_history(record)
-        st.success("✅ 이력 저장 완료")
+        # ── 다운로드 ──
+        st.markdown("---")
+        st.subheader("⑤ 결과 다운로드")
+
+        col_dl1, col_dl2 = st.columns(2)
+
+        # ① 현재 연도 결과
+        with col_dl1:
+            dl_df = data[['date', 'jld', 'daily_dd', 'cumdd', 'sig_gen1', 'sig_gen2']].copy()
+            dl_df['date'] = dl_df['date'].dt.strftime('%Y-%m-%d')
+            st.download_button(
+                "📥 현재 연도 결과 다운로드",
+                dl_df.to_csv(index=False, encoding='utf-8-sig'),
+                f"result_{_species}_{_station}_{_year}.csv",
+                "text/csv",
+                use_container_width=True,
+            )
+
+        # ② 전체 연도 일괄 실행
+        with col_dl2:
+            if st.button("🔄 전체 연도 일괄 계산 (2020~2025)", use_container_width=True):
+                all_years = sorted([
+                    int(yr) for yr in weather_df['crtr_ymd'].astype(str).str[:4].unique()
+                    if 2020 <= int(yr) <= 2025
+                ])
+                rows = []
+                prog = st.progress(0, text="전체 연도 계산 중...")
+                for i, yr in enumerate(all_years):
+                    yr_data = run_model(weather_df, _station, yr, run_cfg)
+                    yr_risk = get_risk_dates(yr_data, run_cfg)
+                    rows.append({'연도': yr, **yr_risk})
+                    prog.progress((i + 1) / len(all_years), text=f"{yr}년 완료...")
+                prog.empty()
+                st.session_state['all_years_csv'] = pd.DataFrame(rows).to_csv(index=False, encoding='utf-8-sig')
+                st.session_state['all_years_fn']  = f"result_{_species}_{_station}_전체.csv"
+
+            if 'all_years_csv' in st.session_state:
+                st.download_button(
+                    "📥 전체 연도 CSV 다운로드",
+                    st.session_state['all_years_csv'],
+                    st.session_state['all_years_fn'],
+                    "text/csv",
+                    use_container_width=True,
+                )
 
 # ══ 메뉴 2: 이력 조회 ══════════════════════════════════
 elif menu == "이력 조회":
